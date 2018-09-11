@@ -40,7 +40,7 @@ private Grid PayloadDefinition
 }
 ```
 
-If the payload has a nested structure, the user needs to select the *Spesify a JSON path for payload* check box. When a user clicks the *Add*-button on the grid, they will normally be allowed to only add a *Name* and *Type*, unless the *Spesify JSON path for payload* check box is checked, for which an extra column will be added to allow the user to add the JSON path. To get the value of this setting, use the following code:
+If the payload has a nested structure, the user needs to select the *Specify a JSON path for payload* check box. When a user clicks the *Add*-button on the grid, they will normally be allowed to only add a *Name* and *Type*, unless the *Specify JSON path for payload* check box is checked, for which an extra column will be added to allow the user to add the JSON path. To get the value of this setting, use the following code:
 ```csharp
 private bool SpecifyJPath
 {
