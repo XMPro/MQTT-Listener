@@ -10,7 +10,7 @@
 The MQTT listener allows a user to receive data from a device or any source that uses the MQTT messaging protocol.
 
 ## How the code works
-All settings referred to in the code need to correspond with the settings defined in the template that has been created for the agent using the Stream Integration Manager. Refer to the [Stream Integration Manager](https://docs.xmpro.com/topic/getting-to-know-the-framework/#1534129009509-379bd7d3-9f40) guide for instructions on how to define the settings in the template and package the agent after building the code. 
+All settings referred to in the code need to correspond with the settings defined in the template that has been created for the agent using the Stream Integration Manager. Refer to the [Stream Integration Manager](https://docs.xmpro.com/courses/packaging-an-agent-using-stream-integration-manager/) guide for instructions on how to define the settings in the template and package the agent after building the code. 
 
 After packaging the agent, you can upload it to XMPro IoT and start using it.
 
