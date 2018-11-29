@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -33,7 +33,7 @@ namespace XMPro.MQTTAgents
         private const string CACertParam = "CACert";
         private const string ClientCertParam = "ClientCert";
         private const string CertPasswordParam = "CertPassword";
-        
+
         private const string AuthUsernameParam = "Username";
         private const string AuthPasswordParam = "Password";
 
@@ -47,6 +47,8 @@ namespace XMPro.MQTTAgents
         private string Broker => this.config[BrokerParam];
         private string Topic => this.IsRemote() ? this.FromId().ToString() : this.config[TopicParam];
         private byte QualityOfService { get; set; }
+        private string Format => this.config["Format"] ?? "JSON";
+
         private Grid _PayloadDefinition;
         private Grid PayloadDefinition
         {
@@ -146,32 +148,65 @@ namespace XMPro.MQTTAgents
 
         private void Client_MqttMsgPublishReceived(object sender, MqttMsgPublishEventArgs e)
         {
-            var message = Encoding.UTF8.GetString(e.Message);
-            if (!message.StartsWith("[") || !message.EndsWith("]"))
-                message = "[" + message.TrimStart('[').TrimEnd(']') + "]";
-
-            JArray input = JArray.Parse(message);
-            JArray output = new JArray();
-
-            if (SpecifyJPath == false)
+            string message = null;
+            try
             {
-                output = input;
-            }
-            else
-            {
-                foreach (var obj in input.Children<JObject>())
+                JArray output = new JArray();
+                switch (this.Format)
                 {
-                    JObject modObj = new JObject();
-                    foreach (var row in this.PayloadDefinition.Rows)
-                    {
-                        object value = ((JValue)obj.SelectToken(row["Path"].ToString()))?.Value;
-                        modObj.Add(new JProperty(row["Name"].ToString(), value));
-                    }
-                    output.Add(modObj);
-                }
-            }
+                    case "JSON":
+                        message = Encoding.UTF8.GetString(e.Message);
 
-            this.OnPublish?.Invoke(this, new OnPublishArgs(output, "Output"));
+                        if (!message.StartsWith("[") || !message.EndsWith("]"))
+                            message = "[" + message.TrimStart('[').TrimEnd(']') + "]";
+
+                        JArray input = JArray.Parse(message);
+
+                        if (SpecifyJPath == false)
+                        {
+                            output = input;
+                        }
+                        else
+                        {
+                            foreach (var obj in input.Children<JObject>())
+                            {
+                                JObject modObj = new JObject();
+                                foreach (var row in this.PayloadDefinition.Rows)
+                                {
+                                    object value = ((JValue)obj.SelectToken(row["Path"].ToString()))?.Value;
+                                    modObj.Add(new JProperty(row["Name"].ToString(), value));
+                                }
+                                output.Add(modObj);
+                            }
+                        }
+                        break;
+                    case "HEX":
+                        JObject hObj = new JObject();
+                        foreach (var row in this.PayloadDefinition.Rows)
+                        {
+                            string value = String.Concat(Listener.ParseIndexes(row["ByteIndexes"].ToString(), e.Message.Length - 1).Select(i => e.Message[i].ToString("X2")));
+                            hObj.Add(new JProperty(row["Name"].ToString(), value));
+                        }
+                        output.Add(hObj);
+                        break;
+                    default:
+                        throw new IndexOutOfRangeException($"Unknown payload format specified: {this.Format}");
+                }
+                this.OnPublish?.Invoke(this, new OnPublishArgs(output, "Output"));
+            }
+            catch (Exception ex)
+            {
+                JObject errorObject = new JObject()
+                {
+                    { "AgentId" , this.UniqueId },
+                    { "Timestamp", DateTime.UtcNow },
+                    { "Source", nameof(Client_MqttMsgPublishReceived) },
+                    { "Error", ex.GetType().Name },
+                    { "DetailedError", ex.Message },
+                    { "Data", message ?? "Error deserializing the data"},
+                };
+                this.OnPublish?.Invoke(this, new OnPublishArgs(new JArray() { errorObject }, "Error"));
+            }
         }
 
         public void Destroy()
@@ -188,6 +223,7 @@ namespace XMPro.MQTTAgents
             topic.Visible = !this.IsRemote();
 
             // MQTT
+            var Format = settingsObj.Find("Format") as DropDown;
             CheckBox secure = (CheckBox)settingsObj.Find(SecureParam);
             FileUpload caCert = (FileUpload)settingsObj.Find(CACertParam);
             FileUpload clientCert = (FileUpload)settingsObj.Find(ClientCertParam);
@@ -207,15 +243,23 @@ namespace XMPro.MQTTAgents
                 caCert.Value = null;
                 clientCert.Value = null;
             }
-            
+
             TextBox brokerUserName = (TextBox)settingsObj.Find(AuthUsernameParam);
             TextBox brokerPassword = (TextBox)settingsObj.Find(AuthPasswordParam);
 
             var SpecifyJPath = settingsObj.Find("SpecifyJPath") as CheckBox;
+            SpecifyJPath.Visible = Format.Value == "JSON";
             var SampleJPath = settingsObj.Find("SampleJPath") as Title;
             var PayloadDefinition = settingsObj.Find("PayloadDefinition") as Grid;
             TextBox JPath = PayloadDefinition.Columns.First(s => s.Key == "Path") as TextBox;
-            JPath.Visible = JPath.Required = SampleJPath.Visible = SpecifyJPath.Value;
+            JPath.Visible
+                = JPath.Required
+                = SampleJPath.Visible
+                = SpecifyJPath.Value && SpecifyJPath.Visible;
+            DropDown Type = PayloadDefinition.Columns.First(s => s.Key == "Type") as DropDown;
+            Type.Visible = Format.Value == "JSON";
+            TextBox ByteIndexes = PayloadDefinition.Columns.First(s => s.Key == "ByteIndexes") as TextBox;
+            ByteIndexes.Visible = Format.Value == "HEX";
 
             return settingsObj.ToString();
         }
@@ -246,7 +290,7 @@ namespace XMPro.MQTTAgents
                 }
             }
 
-            if (parameters.Keys.Contains(AuthPasswordParam) && !string.IsNullOrWhiteSpace(parameters[AuthPasswordParam]) 
+            if (parameters.Keys.Contains(AuthPasswordParam) && !string.IsNullOrWhiteSpace(parameters[AuthPasswordParam])
                 && (!parameters.Keys.Contains(AuthUsernameParam) || string.IsNullOrWhiteSpace(parameters[AuthUsernameParam])))
             {
                 errors.Add("Authentication password present, but username is not defined.");
@@ -273,11 +317,8 @@ namespace XMPro.MQTTAgents
 
         public IEnumerable<XMIoT.Framework.Attribute> GetOutputAttributes(string endpoint, IDictionary<string, string> parameters)
         {
-            return new Grid()
-            {
-                Value = parameters[PayloadParam]
-            }
-            .Rows.Select(row => new XMIoT.Framework.Attribute((string)row[PayloadNameColumn], (Types)Enum.Parse(typeof(Types), (string)row[PayloadTypeColumn])));
+            this.config = new Configuration() { Parameters = parameters };
+            return this.PayloadDefinition.Rows.Select(row => new XMIoT.Framework.Attribute((string)row[PayloadNameColumn], this.Format == "JSON" ? (Types)Enum.Parse(typeof(Types), (string)row[PayloadTypeColumn]) : Types.String));
 
         }
     }
