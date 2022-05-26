@@ -1,21 +1,22 @@
-# MQTT-Listener
+# MQTT Listener
 
 ## Prerequisites
-- The port on which MQTT is listening should be accessible on the network
-- Visual Studio (any version that supports .Net Core 2.1)
-- [XMPro IoT Framework NuGet package](https://www.nuget.org/packages/XMPro.IOT.Framework/3.0.2-beta)
-- Please see the [Building an Agent for XMPro IoT](https://docs.xmpro.com/lessons/writing-an-agent-for-xmpro-iot/) guide for a better understanding of how the XMPro IoT Framework works
+- The port on which MQTT is listening should be accessible
+- Visual Studio
+- [XMPro IoT Framework NuGet package](https://www.nuget.org/packages/XMPro.IOT.Framework/)
+- Please see the [Manage Agents](https://documentation.xmpro.com/how-tos/manage-agents) guide for a better understanding of how the Agent Framework works
 
 ## Description
-The MQTT listener allows a user to receive data from a device or any source that uses the MQTT messaging protocol.
+The *MQTT listener* allows a user to receive data from a device or any source that uses the MQTT messaging protocol.
 
 ## How the code works
-All settings referred to in the code need to correspond with the settings defined in the template that has been created for the agent using the Stream Integration Manager. Refer to the [Stream Integration Manager](https://docs.xmpro.com/courses/packaging-an-agent-using-stream-integration-manager/) guide for instructions on how to define the settings in the template and package the agent after building the code. 
+All settings referred to in the code need to correspond with the settings defined in the template that has been created for the agent using the XMPro Package Manager. Refer to the [XMPro Package Manager](https://documentation.xmpro.com/agent/packaging-agents/) guide for instructions on how to define the settings in the template and package the agent after building the code. 
 
-After packaging the agent, you can upload it to XMPro IoT and start using it.
+After packaging the agent, you can upload it to the XMPro Data Stream Designer and start using it.
 
 ### Settings
 When a user needs to use the *MQTT Listener*, they need to provide a Broker address, and a topic. A user also needs to specify the payload format. Available payload formats include JSON and HEX. Retrieve these values from the configuration using the following code: 
+
 ```csharp
 private Configuration config;
 private MqttClient client;
@@ -23,7 +24,9 @@ private string Broker => this.config["Broker"];
 private string Topic => this.IsRemote() ? this.FromId().ToString() : this.config["Topic"];
 private string Format => this.config["Format"] ?? "JSON";
 ```
+
 The user also needs to specify a payload definition. Each definition consists of a name and data type, which is added via a grid. Get the value of the grid, using the following code:
+
 ```csharp
 private Grid _PayloadDefinition;
 private Grid PayloadDefinition
@@ -42,6 +45,7 @@ private Grid PayloadDefinition
 ```
 
 If the payload has a nested structure, the user needs to select the *Specify a JSON path for payload* check box. When a user clicks the *Add*-button on the grid, they will normally be allowed to only add a *Name* and *Type*, unless the *Specify JSON path for payload* check box is checked, for which an extra column will be added to allow the user to add the JSON path. To get the value of this setting, use the following code:
+
 ```csharp
 private bool SpecifyJPath
 {
@@ -53,7 +57,9 @@ private bool SpecifyJPath
     }
 }
 ```
+
 Example of a payload with a nested structure: Given the payload below, the *JSON Path* to the "*author*" attribute would be "*store.book.author*".
+
 ```json
 {
   "store":
@@ -67,12 +73,14 @@ Example of a payload with a nested structure: Given the payload below, the *JSON
 } 
 ```
 
-### Configurations
+### Configuration
 In the *GetConfigurationTemplate* method, parse the JSON representation of the settings into the Settings object.
+
 ```csharp
 var settings = Settings.Parse(template);
 new Populator(parameters).Populate(settings);
 ```
+
 Create controls for the items listed below and set their values and visibility.
 * Topic 
 * *Specify JSON path for payload* check box
@@ -106,6 +114,7 @@ ByteIndexes.Visible = Format.Value == "HEX";
 The settings listed below should not be left empty. If they're left empty, an error needs to be added when the stream is validated.
 * Broker Address
 * Topic
+
 ```csharp
 int i = 1;
 var errors = new List<string>();
@@ -117,7 +126,9 @@ if (String.IsNullOrWhiteSpace(this.Broker))
 if (String.IsNullOrWhiteSpace(this.Topic))
     errors.Add($"Error {i++}: Topic is not specified.");      
 ```
+
 The Payload Definition should also contain at least one row. If the grid contains at least one row, make sure that, if the user checked the *Specify JSON path for payload* check box, the JSON path is defined.
+
 ```csharp
 var grid = new Grid();
 grid.Value = this.config["PayloadDefinition"];
@@ -137,20 +148,26 @@ else
 
 ### Create
 Set the config variable to the configuration received in the *Create* method.
+
 ```csharp
 this.config = configuration;
 ```
+
 Create a new MQTT client, given the value in the *Broker Address* field 
+
 ```csharp
 this.client = new MqttClient(this.Broker);
 ```
+
 Specify the event handler that should be used when the *MqttMsgPublishReceived* event is raised. This event will be raised each time a message is published on the topic that the client is subscribed to.
+
 ```csharp
 this.client.MqttMsgPublishReceived += Client_MqttMsgPublishReceived;
 ```
 
 ### Start
 In the *Start* method, connect to the MQTT client, providing a new and unique ID and then subscribe to the topic the user provided.
+
 ```csharp
 public void Start()
 {
@@ -164,6 +181,7 @@ public void Start()
 
 ### Destroy
 Make sure that the MQTT client is disconnected in the *Destroy* method.
+
 ```csharp
 public void Destroy()
 {
@@ -171,10 +189,12 @@ public void Destroy()
         this.client.Disconnect();
 }
 ```
+
 ### Publishing Events
 Events need to be published in the event handler of the *MqttMsgPublishReceived* event.
 
 If the format of the payload is **JSON**, first make sure that the message is correctly formatted. 
+
  ```csharp
 var message = Encoding.UTF8.GetString(e.Message);
 if (!message.StartsWith("[") || !message.EndsWith("]"))
@@ -182,6 +202,7 @@ if (!message.StartsWith("[") || !message.EndsWith("]"))
 ```
 
 If there isn't a JSON path specified for the payload, the output of the agent would be the same as the input. However, if a path has been specified, it needs to apply the *SelectToken* to get the value, after which the value needs to be added to the output.
+
 ```csharp
 JArray input = JArray.Parse(message);
 
@@ -205,6 +226,7 @@ else
 ```
 
 If the format of the payload is **HEX**, for each of the rows in the payload definition, make sure the value of the data is in the correct format for each row and add the row to an object of type *JObject*. Finally, add the object to the output.
+
 ```csharp
 JObject hObj = new JObject();
 foreach (var row in this.PayloadDefinition.Rows)
@@ -216,6 +238,7 @@ output.Add(hObj);
 ```
 
 Invoke the *OnPublish* event and publish the output to the *Output* endpoint.
+
 ```csharp
 this.OnPublish?.Invoke(this, new OnPublishArgs(output, "Output"));
 ```
